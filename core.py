@@ -197,19 +197,24 @@ class SatEngine(ProductStore):
             for meta in self.metadata:
 
                 product_id = meta['productId']
-                print(f'Downloading product {product_id}.')
 
-                try:
-                    self.api.download(product_id, directory_path = self.dir_downloads)
-                    meta['isDownloaded'] = True
+                if path.isfile(path.join(self.dir_downloads, meta['zipFile'])):
+                    print('Product already downloaded.')
 
-                except LTATriggered:
-                    print('Long Term Archive triggered, cannot download right now.')
-                    continue
+                else:
+                    print(f'Downloading product {product_id}.')
 
-                except Exception as err:
-                    print(f'Error occurred: {str(err)}, skipping this product.')
-                    continue
+                    try:
+                        self.api.download(product_id, directory_path = self.dir_downloads)
+                        meta['isDownloaded'] = True
+
+                    except LTATriggered:
+                        print('Long Term Archive triggered, cannot download right now.')
+                        continue
+
+                    except Exception as err:
+                        print(f'Error occurred: {str(err)}, skipping this product.')
+                        continue
 
                 if path.isdir(path.join(self.dir_products, meta['dataFolder'])):
                     print('Data folder already extracted.')
