@@ -3,9 +3,12 @@ import gc
 from os import path, makedirs, listdir
 import json
 import csv
+import zipfile
 import numpy as np
 import cv2 as cv
+import tqdm
 from sentinelsat import SentinelAPI, read_geojson, geojson_to_wkt
+from sentinelsat.exceptions import LTATriggered
 import geoutils as gt
 import detection as det
 import utils
@@ -162,37 +165,61 @@ class SatEngine(ProductStore):
         self.api = SentinelAPI(username, password, apihub_url)
 
     def download(self, fn_geojson, date_start, date_end, check_only = False,
-        policy = 'Contains'):
+        query = True, policy = 'Contains'):
         """Downloads GRD High-Resolution images from Sentinel-1."""
 
-        # Read GEOJSON and convert to WKT format.
-        json_data = read_geojson(fn_geojson)
-        footprint = geojson_to_wkt(json_data)
+        if query is True:
 
-        # Query Copernicus API for products.
-        products = self.api.query(footprint, date = (date_start, date_end),
-            platformname = 'Sentinel-1', producttype = 'GRD',
-            area_relation = policy)
+            # Read GEOJSON and convert to WKT format.
+            json_data = read_geojson(fn_geojson)
+            footprint = geojson_to_wkt(json_data)
 
-        # Convert to DataFrame.
-        df_products = self.api.to_dataframe(products)
-        print(f'Found {df_products.shape[0]} products from Copernicus.')
+            # Query Copernicus API for products.
+            products = self.api.query(footprint, date = (date_start, date_end),
+                platformname = 'Sentinel-1', producttype = 'GRD',
+                area_relation = policy)
 
-        # Filter products and update metadata.
-        for product_id in df_products.index:
-            metadata = self.api.get_product_odata(product_id, full = True)
-            if metadata['Mode'] == 'IW' and metadata['Resolution'] == 'High':
-                self.add_metadata(product_id, metadata)
+            # Convert to DataFrame.
+            df_products = self.api.to_dataframe(products)
+            print(f'Found {df_products.shape[0]} products from Copernicus.')
 
-        # Download the products.
+            # Filter products and update metadata.
+            for product_id in tqdm(df_products.index):
+
+                metadata = self.api.get_product_odata(product_id, full = True)
+
+                if metadata['Mode'] == 'IW' and metadata['Resolution'] == 'High':
+                    self.add_metadata(product_id, metadata)
+
+        # Download/extract the products.
         if check_only is False:
-            for meta in self._all_metadata:
+
+            for meta in self.metadata:
 
                 product_id = meta['productId']
                 print(f'Downloading product {product_id}.')
 
-                self.api.download(product_id, directory_path = self.dir_downloads)
-                meta['isDownloaded'] = True
+                try:
+                    self.api.download(product_id, directory_path = self.dir_downloads)
+                    meta['isDownloaded'] = True
+
+                except LTATriggered:
+                    print('Long Term Archive triggered, cannot download right now.')
+                    continue
+
+                except Exception as err:
+                    print('Error occurred: {str(err)}, skipping this product.')
+                    continue
+                    
+                if path.isdir(path.join(self.dir_products, meta['dataFolder'])):
+                    print('Data folder already extracted.')
+
+                else:
+                    zip_file = meta['zipFile']
+                    print(f'Extracting {zip_file} to data folder.')
+
+                    with zipfile.ZipFile(path.join(self.dir_downloads, zip_file), 'r') as zip_ref:
+                        zip_ref.extractall(self.dir_products)
 
     def extract_aoi(self, fn_geojson):
         """Crops the image and extracts the AOI."""
