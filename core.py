@@ -208,9 +208,9 @@ class SatEngine(ProductStore):
                     continue
 
                 except Exception as err:
-                    print('Error occurred: {str(err)}, skipping this product.')
+                    print(f'Error occurred: {str(err)}, skipping this product.')
                     continue
-                    
+
                 if path.isdir(path.join(self.dir_products, meta['dataFolder'])):
                     print('Data folder already extracted.')
 
