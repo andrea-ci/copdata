@@ -1,5 +1,24 @@
 # -*- coding: utf-8 -*-
-import numpy as np
+import logging
+from logging import StreamHandler
+
+def get_logger():
+
+    log_level = 'INFO'
+
+    logger = logging.getLogger('s1-processing')
+
+    file_log_formatter = logging.Formatter(
+        '%(asctime)s : %(levelname)s : %(message)s',
+        datefmt = '%Y-%m-%d %H:%M:%S')
+
+    file_log_handler = StreamHandler()
+    file_log_handler.setFormatter(file_log_formatter)
+
+    logger.addHandler(file_log_handler)
+    logger.setLevel(log_level)
+
+    return logger
 
 def create_image_rgb(image_vv, image_vh):
     """

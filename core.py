@@ -15,6 +15,9 @@ import utils
 
 apihub_url = 'https://apihub.copernicus.eu/apihub'
 
+# Init the logger.
+logger = utils.get_logger()
+
 class ProductStore:
     """Manages metadata for Sentinel-1 products."""
 
@@ -181,7 +184,7 @@ class SatEngine(ProductStore):
 
             # Convert to DataFrame.
             df_products = self.api.to_dataframe(products)
-            print(f'Found {df_products.shape[0]} products from Copernicus.')
+            logger.info(f'Found {df_products.shape[0]} products from Copernicus.')
 
             # Filter products and update metadata.
             for product_id in tqdm(df_products.index):
@@ -199,29 +202,29 @@ class SatEngine(ProductStore):
                 product_id = meta['productId']
 
                 if path.isfile(path.join(self.dir_downloads, meta['zipFile'])):
-                    print('Product already downloaded.')
+                    logger.info('Product already downloaded.')
 
                 else:
-                    print(f'Downloading product {product_id}.')
+                    logger.info(f'Downloading product {product_id}.')
 
                     try:
                         self.api.download(product_id, directory_path = self.dir_downloads)
                         meta['isDownloaded'] = True
 
                     except LTATriggered:
-                        print('Long Term Archive triggered, cannot download right now.')
+                        logger.warn('Long Term Archive triggered, cannot download right now.')
                         continue
 
                     except Exception as err:
-                        print(f'Error occurred: {str(err)}, skipping this product.')
+                        logger.warn(f'Error occurred: {str(err)}, skipping this product.')
                         continue
 
                 if path.isdir(path.join(self.dir_products, meta['dataFolder'])):
-                    print('Data folder already extracted.')
+                    logger.info('Data folder already extracted.')
 
                 else:
                     zip_file = meta['zipFile']
-                    print(f'Extracting {zip_file} to data folder.')
+                    logger.info(f'Extracting {zip_file} to data folder.')
 
                     with zipfile.ZipFile(path.join(self.dir_downloads, zip_file), 'r') as zip_ref:
                         zip_ref.extractall(self.dir_products)
@@ -248,7 +251,7 @@ class SatEngine(ProductStore):
             poly = meta['polygon']
             direction = meta['passDirection']
 
-            print(f'Extracting AOI from product {product_id}.')
+            logger.info(f'Extracting AOI from product {product_id}.')
 
             if meta['isDownloaded'] is not True:
                 continue
@@ -305,26 +308,19 @@ class SatEngine(ProductStore):
             # Angle is negated because we must perform the opposite transformation
             # between coordinate systems, i.e. from swath-based to NS-EW.
             theta = - gt.get_bearing(bottom_right, upper_right)
-            print(f'Swath bearing is {-theta}.')
+            logger.info(f'Swath bearing is {-theta}.')
 
             # Evaluate the projection of image rows/cols along North/East.
             dE_col, dN_col = gt.rotate_spacing(10, 0, theta)
             dE_row, dN_row = gt.rotate_spacing(0, -10, theta)
 
-            print(f'Projection of image columns to North and East: {dE_col}m, {dN_col}m')
-            print(f'Projection of image rows to North and East: {dE_row}m, {dN_row}m')
+            logger.info(f'Projection of image columns to North and East: {dE_col}m, {dN_col}m')
+            logger.info(f'Projection of image rows to North and East: {dE_row}m, {dN_row}m')
 
             img_coords = gt.gen_pixel_coords(poly, n_rows, n_cols, dN_col, dE_col,
                 dN_row, dE_row)
 
-            print('Coordinates at corners:')
-            print(img_coords[0, 0, :])
-            print(img_coords[0, n_cols - 1, :])
-            print(img_coords[n_rows - 1, 0, :])
-            print(img_coords[n_rows - 1, n_cols - 1, :])
-
             r_min, r_max, c_min, c_max = gt.find_bbox_inds(img_coords, bbox)
-            print(r_min, r_max, c_min, c_max)
 
             fn_cropped_vv = path.join(self.dir_images, product_id, 'cropped_vv.png')
             fn_cropped_vh = path.join(self.dir_images, product_id, 'cropped_vh.png')
@@ -352,7 +348,7 @@ class SatEngine(ProductStore):
         for meta in self.metadata:
 
             product_id = meta['productId']
-            print(f'Starting to process product {product_id}.')
+            logger.info(f'Starting to process product {product_id}.')
 
             path_cropped_vv = path.join(self.dir_images, product_id, 'cropped_vv.png')
             path_cropped_vh = path.join(self.dir_images, product_id, 'cropped_vh.png')
@@ -362,23 +358,23 @@ class SatEngine(ProductStore):
             image_vh = cv.imread(path_cropped_vh, cv.IMREAD_UNCHANGED)
             image_vh = image_vh.astype(np.float64)
 
-            print('Starting CFAR detection for VV image.')
+            logger.info('Starting CFAR detection for VV image.')
             targets_vv = det.cfar_detector(image_vv, size_outer = 100,
                 size_inner = 40, thr = 4.7)
-            print(f'Found {np.sum(targets_vv)} positive samples.')
+            logger.info(f'Found {np.sum(targets_vv)} positive samples.')
 
-            print('Starting CFAR detection for VH image.')
+            logger.info('Starting CFAR detection for VH image.')
             targets_vh = det.cfar_detector(image_vh, size_outer = 100,
                 size_inner = 40, thr = 4.7)
-            print(f'Found {np.sum(targets_vh)} positive samples.')
+            logger.info(f'Found {np.sum(targets_vh)} positive samples.')
 
             # Fuse targets from both polarizations.
             targets = np.zeros(targets_vv.shape, dtype = np.uint8)
             targets[(targets_vv == 1) & (targets_vh == 1)] = 1
             n_targets = np.sum(targets)
-            print(f'Found {n_targets} common targets.')
+            logger.info(f'Found {n_targets} common targets.')
 
-            print('Finding target contours.')
+            logger.info('Finding target contours.')
             contours, hierarchy = cv.findContours(targets, cv.RETR_TREE,
                 cv.CHAIN_APPROX_SIMPLE)
 
@@ -388,7 +384,7 @@ class SatEngine(ProductStore):
             # Merge overlapping boxes.
             merged_boxes = det.merge_overlapping_boxes(boxes)
             n_ships = len(merged_boxes)
-            print(f'Found {n_ships} non overlapping shapes.')
+            logger.info(f'Found {n_ships} non overlapping shapes.')
 
             # Add the ship boxes to the RGB image.
             fn_cropped = path.join(self.dir_images, product_id, 'cropped.png')
