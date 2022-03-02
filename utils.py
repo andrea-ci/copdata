@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import logging
 from logging import StreamHandler
+import numpy as np
 
 def get_logger():
 
