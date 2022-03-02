@@ -202,7 +202,10 @@ class SatEngine(ProductStore):
                 product_id = meta['productId']
 
                 if path.isfile(path.join(self.dir_downloads, meta['zipFile'])):
+
                     logger.info('Product already downloaded.')
+                    # Just to be sure that metadata are up-to-date.
+                    meta['isDownloaded'] = True
 
                 else:
                     logger.info(f'Downloading product {product_id}.')
@@ -219,9 +222,10 @@ class SatEngine(ProductStore):
                         logger.warn(f'Error occurred: {str(err)}, skipping this product.')
                         continue
 
+                # Check for data extraction: if SAFE folder is not existing,
+                # unzip the product archive.
                 if path.isdir(path.join(self.dir_products, meta['dataFolder'])):
                     logger.info('Data folder already extracted.')
-
                 else:
                     zip_file = meta['zipFile']
                     logger.info(f'Extracting {zip_file} to data folder.')
