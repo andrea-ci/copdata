@@ -6,7 +6,7 @@ import csv
 import zipfile
 import numpy as np
 import cv2 as cv
-import tqdm
+from tqdm import tqdm
 from sentinelsat import SentinelAPI, read_geojson, geojson_to_wkt
 from sentinelsat.exceptions import LTATriggered
 import geoutils as gt
