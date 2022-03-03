@@ -5,6 +5,7 @@ import json
 import csv
 import zipfile
 import numpy as np
+import pandas as pd
 import cv2 as cv
 from tqdm import tqdm
 from sentinelsat import SentinelAPI, read_geojson, geojson_to_wkt
@@ -168,7 +169,7 @@ class SatEngine(ProductStore):
         self.api = SentinelAPI(username, password, apihub_url)
 
     def download(self, fn_geojson, date_start, date_end, check_only = False,
-        query = True, policy = 'Contains'):
+        query = True, policy = 'Contains', downsampling = None):
         """Downloads GRD High-Resolution images from Sentinel-1."""
 
         if query is True:
@@ -184,6 +185,14 @@ class SatEngine(ProductStore):
 
             # Convert to DataFrame.
             df_products = self.api.to_dataframe(products)
+
+            if downsampling is not None:
+                # Downsample the products on a date basis.
+                df_products['Date'] = pd.to_datetime(df_products.ingestiondate)
+                resampler = df_products.resample(downsampling, on = 'Date')
+                df_products = resampler.first().drop('Date', axis = 1)
+                df_products.index = df_products.uuid.values
+
             logger.info(f'Found {df_products.shape[0]} products from Copernicus.')
 
             # Filter products and update metadata.
@@ -200,38 +209,47 @@ class SatEngine(ProductStore):
             for meta in self.metadata:
 
                 product_id = meta['productId']
+                is_downloaded = False
 
                 if path.isfile(path.join(self.dir_downloads, meta['zipFile'])):
 
                     logger.info('Product already downloaded.')
                     # Just to be sure that metadata are up-to-date.
-                    meta['isDownloaded'] = True
+                    is_downloaded = True
 
                 else:
+
                     logger.info(f'Downloading product {product_id}.')
 
                     try:
                         self.api.download(product_id, directory_path = self.dir_downloads)
-                        meta['isDownloaded'] = True
+                        is_downloaded = True
 
                     except LTATriggered:
                         logger.warn('Long Term Archive triggered, cannot download right now.')
-                        continue
 
                     except Exception as err:
-                        logger.warn(f'Error occurred: {str(err)}, skipping this product.')
-                        continue
+                        logger.error(f'Error occurred: {str(err)}, skipping this product.')
+
+                if is_downloaded is True:
+                    meta['isDownloaded'] = True
 
                 # Check for data extraction: if SAFE folder is not existing,
                 # unzip the product archive.
                 if path.isdir(path.join(self.dir_products, meta['dataFolder'])):
-                    logger.info('Data folder already extracted.')
-                else:
+                    logger.info('Skipping extraction, data folder already extracted.')
+
+                elif is_downloaded is True:
+
                     zip_file = meta['zipFile']
                     logger.info(f'Extracting {zip_file} to data folder.')
 
                     with zipfile.ZipFile(path.join(self.dir_downloads, zip_file), 'r') as zip_ref:
                         zip_ref.extractall(self.dir_products)
+
+                else:
+                    # Data not extracted but also product not downloaded, so just skip.
+                    logger.warn('Product not available, nothing to extract.')
 
     def extract_aoi(self, fn_geojson):
         """Crops the image and extracts the AOI."""
