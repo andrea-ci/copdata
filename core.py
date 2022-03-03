@@ -275,102 +275,117 @@ class SatEngine(ProductStore):
 
             logger.info(f'Extracting AOI from product {product_id}.')
 
-            if meta['isDownloaded'] is not True:
+            if meta['aoiExtracted'] is True:
+                logger.warn('AOI already extracted, skipping this product.')
                 continue
 
-            # Create folder for the product images.
-            if not path.exists(path.join(self.dir_images, product_id)):
-                makedirs(path.join(self.dir_images, product_id))
+            if meta['isDownloaded'] is not True:
+                logger.warn('Product is not downloaded yet.')
+                continue
 
-            # Load VV/VH images.
-            path_image_vv = None
-            path_image_vh = None
+            try:
 
-            path_images = path.join(self.dir_products, data_folder, 'measurement')
+                # Create folder for the product images.
+                if not path.exists(path.join(self.dir_images, product_id)):
+                    makedirs(path.join(self.dir_images, product_id))
 
-            for file in listdir(path_images):
+                # Load VV/VH images.
+                path_image_vv = None
+                path_image_vh = None
 
-                filepath = path.join(path_images, file)
+                path_images = path.join(self.dir_products, data_folder, 'measurement')
 
-                if '-vv-' in filepath:
-                    path_image_vv = filepath
-                elif '-vh-' in filepath:
-                    path_image_vh = filepath
+                for file in listdir(path_images):
 
-            image_vv = cv.imread(path_image_vv, cv.IMREAD_UNCHANGED)
-            image_vh = cv.imread(path_image_vh, cv.IMREAD_UNCHANGED)
-            n_rows, n_cols = image_vv.shape
+                    filepath = path.join(path_images, file)
 
-            # Adjust the image according to the pass direction.
-            if direction == 'descending':
-                # Flip along East-West axis.
-                image_vv = image_vv[:, ::-1]
-                image_vh = image_vh[:, ::-1]
-            else:
-                # Flip along North-South axis.
-                image_vv = image_vv[::-1, :]
-                image_vh = image_vh[::-1, :]
+                    if '-vv-' in filepath:
+                        path_image_vv = filepath
+                    elif '-vh-' in filepath:
+                        path_image_vh = filepath
 
-            # Resize and save a preview.
-            resized_vv = image_vv[::20, ::20].astype(np.float64)
-            resized_vh = image_vh[::20, ::20].astype(np.float64)
-            resized_rgb = utils.create_image_rgb(resized_vv, resized_vh)
-            fn = path.join(self.dir_images, product_id, 'rgb_small.png')
-            cv.imwrite(fn, resized_rgb[:, :, ::-1])
+                image_vv = cv.imread(path_image_vv, cv.IMREAD_UNCHANGED)
+                image_vh = cv.imread(path_image_vh, cv.IMREAD_UNCHANGED)
+                n_rows, n_cols = image_vv.shape
 
-            # Free up saved images.
-            del resized_vv, resized_vh, resized_rgb
-            gc.collect()
+                # Adjust the image according to the pass direction.
+                if direction == 'descending':
+                    # Flip along East-West axis.
+                    image_vv = image_vv[:, ::-1]
+                    image_vh = image_vh[:, ::-1]
+                else:
+                    # Flip along North-South axis.
+                    image_vv = image_vv[::-1, :]
+                    image_vh = image_vh[::-1, :]
 
-            # Evaluate the polygon and sort bottom/upper right points.
-            sorted_by_lat = sorted(poly, key = lambda x : x[1])
-            bottom_right = sorted(sorted_by_lat[:2], key = lambda x : x[0])[1]
-            upper_right = sorted(sorted_by_lat[2:], key = lambda x : x[0])[1]
+                # Resize and save a preview.
+                resized_vv = image_vv[::20, ::20].astype(np.float64)
+                resized_vh = image_vh[::20, ::20].astype(np.float64)
+                resized_rgb = utils.create_image_rgb(resized_vv, resized_vh)
+                fn = path.join(self.dir_images, product_id, 'rgb_small.png')
+                cv.imwrite(fn, resized_rgb[:, :, ::-1])
 
-            # Angle is negated because we must perform the opposite transformation
-            # between coordinate systems, i.e. from swath-based to NS-EW.
-            theta = - gt.get_bearing(bottom_right, upper_right)
-            logger.info(f'Swath bearing is {-theta}.')
+                # Free up saved images.
+                del resized_vv, resized_vh, resized_rgb
+                gc.collect()
 
-            # Evaluate the projection of image rows/cols along North/East.
-            dE_col, dN_col = gt.rotate_spacing(10, 0, theta)
-            dE_row, dN_row = gt.rotate_spacing(0, -10, theta)
+                # Evaluate the polygon and sort bottom/upper right points.
+                sorted_by_lat = sorted(poly, key = lambda x : x[1])
+                bottom_right = sorted(sorted_by_lat[:2], key = lambda x : x[0])[1]
+                upper_right = sorted(sorted_by_lat[2:], key = lambda x : x[0])[1]
 
-            logger.info(f'Projection of image columns to North and East: {dE_col}m, {dN_col}m')
-            logger.info(f'Projection of image rows to North and East: {dE_row}m, {dN_row}m')
+                # Angle is negated because we must perform the opposite transformation
+                # between coordinate systems, i.e. from swath-based to NS-EW.
+                theta = - gt.get_bearing(bottom_right, upper_right)
+                logger.info(f'Swath bearing is {-theta}.')
 
-            img_coords = gt.gen_pixel_coords(poly, n_rows, n_cols, dN_col, dE_col,
-                dN_row, dE_row)
+                # Evaluate the projection of image rows/cols along North/East.
+                dE_col, dN_col = gt.rotate_spacing(10, 0, theta)
+                dE_row, dN_row = gt.rotate_spacing(0, -10, theta)
 
-            r_min, r_max, c_min, c_max = gt.find_bbox_inds(img_coords, bbox)
+                logger.info(f'Projection of image columns to North and East: {dE_col}m, {dN_col}m')
+                logger.info(f'Projection of image rows to North and East: {dE_row}m, {dN_row}m')
 
-            fn_cropped_vv = path.join(self.dir_images, product_id, 'cropped_vv.png')
-            fn_cropped_vh = path.join(self.dir_images, product_id, 'cropped_vh.png')
-            cropped_vv = image_vv[r_min : r_max + 1, c_min : c_max + 1]
-            cropped_vh = image_vh[r_min : r_max + 1, c_min : c_max + 1]
-            cv.imwrite(fn_cropped_vv, cropped_vv)
-            cv.imwrite(fn_cropped_vh, cropped_vh)
+                img_coords = gt.gen_pixel_coords(poly, n_rows, n_cols, dN_col, dE_col,
+                    dN_row, dE_row)
 
-            cropped_vv = cropped_vv.astype(np.float64)
-            cropped_vh = cropped_vh.astype(np.float64)
-            image_rgb = utils.create_image_rgb(cropped_vv, cropped_vh)
-            fn = path.join(self.dir_images, product_id, 'cropped.png')
-            cv.imwrite(fn, image_rgb[:, :, ::-1])
+                r_min, r_max, c_min, c_max = gt.find_bbox_inds(img_coords, bbox)
 
-            # Free up saved images.
-            del cropped_vv, cropped_vh, image_rgb
-            del image_vv, image_vh
-            gc.collect()
+                fn_cropped_vv = path.join(self.dir_images, product_id, 'cropped_vv.png')
+                fn_cropped_vh = path.join(self.dir_images, product_id, 'cropped_vh.png')
+                cropped_vv = image_vv[r_min : r_max + 1, c_min : c_max + 1]
+                cropped_vh = image_vh[r_min : r_max + 1, c_min : c_max + 1]
+                cv.imwrite(fn_cropped_vv, cropped_vv)
+                cv.imwrite(fn_cropped_vh, cropped_vh)
 
-            meta['aoiExtracted'] = True
+                cropped_vv = cropped_vv.astype(np.float64)
+                cropped_vh = cropped_vh.astype(np.float64)
+                image_rgb = utils.create_image_rgb(cropped_vv, cropped_vh)
+                fn = path.join(self.dir_images, product_id, 'cropped.png')
+                cv.imwrite(fn, image_rgb[:, :, ::-1])
 
-    def detect_ships(self):
+                # Free up saved images.
+                del cropped_vv, cropped_vh, image_rgb
+                del image_vv, image_vh
+                gc.collect()
+
+                meta['aoiExtracted'] = True
+                logger.info('Images with AOI have been saved.')
+
+            except Exception as err:
+                logger.error(f'Impossible to extract AOI from this product: "{str(err)}".')
+
+    def detect_ships(self, size_outer = 100, size_inner = 40, thr = 5):
         """Detects ships on images."""
 
         for meta in self.metadata:
 
             product_id = meta['productId']
             logger.info(f'Starting to process product {product_id}.')
+
+            if meta['aoiExtracted'] is not True:
+                logger.warn('Product not extracted, skipping.')
+                continue
 
             path_cropped_vv = path.join(self.dir_images, product_id, 'cropped_vv.png')
             path_cropped_vh = path.join(self.dir_images, product_id, 'cropped_vh.png')
@@ -381,13 +396,13 @@ class SatEngine(ProductStore):
             image_vh = image_vh.astype(np.float64)
 
             logger.info('Starting CFAR detection for VV image.')
-            targets_vv = det.cfar_detector(image_vv, size_outer = 100,
-                size_inner = 40, thr = 4.7)
+            targets_vv = det.cfar_detector(image_vv, size_outer = size_outer,
+                size_inner = size_inner, thr = thr)
             logger.info(f'Found {np.sum(targets_vv)} positive samples.')
 
             logger.info('Starting CFAR detection for VH image.')
-            targets_vh = det.cfar_detector(image_vh, size_outer = 100,
-                size_inner = 40, thr = 4.7)
+            targets_vh = det.cfar_detector(image_vh, size_outer = size_outer,
+                size_inner = size_inner, thr = thr)
             logger.info(f'Found {np.sum(targets_vh)} positive samples.')
 
             # Fuse targets from both polarizations.
