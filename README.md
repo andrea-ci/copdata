@@ -1,42 +1,56 @@
-# Processing Sentinel-1 radar images
+# Library for accessing and pre-processing Sentinel-1 and Sentinel-2 products
 
 Minimal code for classification and object detection tasks.
 
 # Quickstart
 
-Init the engine:
-```python
-from core import SatEngine
+Query products from Copernicus:
 
-# Init the list of downloaded products.
-engine = SatEngine('username', 'password',
-    dir_downloads = '/path/to/downloads',
-    dir_products = '/path/to/data',
-    dir_images = '/path/to/images')
-```
-
-Load metadata from CSV:
 ```python
-engine.from_csv('path/to/metadata.csv')
-```
+from sentinelsat import read_geojson, geojson_to_wkt
+from copdata.copernicus import CopernicusClient
+from copdata.core import SentinelProduct
 
-Query Copernicus and download products:
-```python
+# Init the Copernicus client.
+cc = CopernicusClient('username', 'password')
+
+# Read geojson and convert to WKT format.
 fn_geojson = 'aoi.geojson'
-date_start = '20210101'
+json_data = read_geojson(fn_geojson)
+aoi_wkt = geojson_to_wkt(json_data)
+
+# Query for products.
+date_start = '20211201'
 date_end = '20211231'
-
-engine.download(fn_geojson, date_start, date_end, policy = 'Contains',
-  check_only = False, query = False)
+product_ids = cc.query_products(aoi_wkt, date_start, date_end, details = False)
 ```
 
-Extract AOI and detect ships:
+Download a product from Copernicus:
+
 ```python
-engine.extract_aoi(fn_geojson)
-res = engine.detect_ships()
+
+metadata = cc.download_product(product_id, include_data = True)
 ```
 
-Save metadata (including detection results) to CSV:
+Load a product already downloaded and extracted:
+
 ```python
-engine.to_csv('path/to/metadata.csv')
+
+from copdata.utils import create_image_rgb
+
+# Extract the AOI coordinates.
+poly_aoi = json_data['features'][0]['geometry']['coordinates'][0]
+
+# Open the product.
+sd = SentinelProduct(metadata)
+
+# Check the size of the image(s).
+print(sd.img_shape)
+
+# Extracts the area of interest from the product (Sentinel-1).
+cropped_vv, cropped_vh = sd.extract_aoi(poly_aoi)
+
+# Create a pseudo-RGB image of AOI.
+cropped_rgb = create_image_rgb(cropped_vv, cropped_vh)
+
 ```
