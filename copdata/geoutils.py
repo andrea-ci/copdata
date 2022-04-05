@@ -3,29 +3,45 @@ import numpy as np
 from numba import jit
 from turfpy import measurement
 from geojson import Point, Feature, FeatureCollection, Polygon
+from . import utils
+
+# Init the logger.
+logger = utils.get_logger()
 
 EARTH_RADIUS = 6371000
+PIXEL_SPACING = 10
 
-def parse_polygon(polygon_str):
-    """Parses the polygon string obtained by Copernicus product metadata.
+def get_img_coords(img_poly, n_rows, n_cols):
+    """Gets long/lat coordinates of pixels given polygon and size of the image."""
 
-    Returns the list of 4 (long, lat) coordinates of polygon verteces.
-    """
+    # Sort points by latitude and identify some corners.
+    sorted_by_lat = sorted(img_poly, key = lambda x : x[1])
+    corner_se = sorted(sorted_by_lat[:2], key = lambda x : x[0])[0]
+    corner_sw = sorted(sorted_by_lat[:2], key = lambda x : x[0])[1]
+    corner_ne = sorted(sorted_by_lat[2:], key = lambda x : x[0])[0]
+    corner_nw = sorted(sorted_by_lat[2:], key = lambda x : x[0])[1]
 
-    if not polygon_str.startswith('POLYGON'):
-        raise ValueError('Invalid POLYGON string.')
+    # Calculate the angle between swath and N-S axis.
+    theta1 = get_bearing(corner_sw, corner_nw)
+    theta2 = get_bearing(corner_se, corner_ne)
+    theta = np.mean([theta1, theta2])
+    logger.info(f'Swath bearing is {theta}.')
 
-    poly = []
+    # Angle is negated because we must perform the opposite transformation
+    # between coordinate systems, i.e. from swath-based to NS-EW.
+    dE_col, dN_col = rotate_spacing(PIXEL_SPACING, 0, -theta)
+    dE_row, dN_row = rotate_spacing(0, -PIXEL_SPACING, -theta)
 
-    text = polygon_str[9:-2]
-    list_coords_str = text.split(',')
+    logger.info(f'Projection of image columns to East and North: {dE_col}m, {dN_col}m')
+    logger.info(f'Projection of image rows to East and North: {dE_row}m, {dN_row}m')
 
-    # Discard che last point as it's equal to the first one.
-    for coords in list_coords_str[:-1]:
-        long, lat = coords.split(' ')
-        poly.append((float(long), float(lat)))
+    img_coords = np.empty((n_rows, n_cols, 2))
+    img_coords[0, 0] = corner_ne
 
-    return poly
+    img_coords = fill_pixel_coords(img_coords, n_rows, n_cols, dN_col, dE_col,
+        dN_row, dE_row)
+
+    return img_coords
 
 def get_bearing(p1, p2):
     """Returns the bearing of swath. Bearing is the angle in degrees measured
@@ -71,23 +87,6 @@ def fill_pixel_coords(mat_coords, n_rows, n_cols, dN_col, dE_col, dN_row, dE_row
             mat_coords[ii, jj] = add_meters_to_longlat(mat_coords[ii, jj - 1], dN_col, dE_col)
 
     return mat_coords
-
-def gen_pixel_coords(poly, n_rows, n_cols, dN_col, dE_col, dN_row, dE_row):
-
-    img_coords = np.empty((n_rows, n_cols, 2))
-
-    # Sort points by latitude.
-    sorted_by_lat = sorted(poly, key = lambda x : x[1])
-
-    # Take bottom points and pick the one with min longitude / bottom-left.
-    upper_left = sorted(sorted_by_lat[2:], key = lambda x : x[0])[0]
-
-    img_coords[0, 0] = upper_left
-
-    img_coords = fill_pixel_coords(img_coords, n_rows, n_cols, dN_col, dE_col,
-        dN_row, dE_row)
-
-    return img_coords
 
 @jit(nopython = True)
 def find_bbox_inds(img_coords, bbox):

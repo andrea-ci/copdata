@@ -140,7 +140,7 @@ class ProductStore:
 
         return poly
 
-class SatEngine(ProductStore):
+class DataEngine(ProductStore):
     """Downloads data and processes Sentinel-1 images."""
 
     def __init__(self, username, password, dir_downloads = 'downloads',
@@ -281,6 +281,7 @@ class SatEngine(ProductStore):
 
     def download(self, fn_geojson, date_start, date_end, check_only = False,
         query = True, policy = 'Contains', downsampling = None):
+        """DEPRECATED"""
         """Downloads GRD High-Resolution images from Sentinel-1."""
 
         if query is True:
@@ -430,12 +431,12 @@ class SatEngine(ProductStore):
 
                 # Evaluate the polygon and sort bottom/upper right points.
                 sorted_by_lat = sorted(poly, key = lambda x : x[1])
-                bottom_right = sorted(sorted_by_lat[:2], key = lambda x : x[0])[1]
-                upper_right = sorted(sorted_by_lat[2:], key = lambda x : x[0])[1]
+                corner_sw = sorted(sorted_by_lat[:2], key = lambda x : x[0])[1]
+                corner_nw = sorted(sorted_by_lat[2:], key = lambda x : x[0])[1]
 
                 # Angle is negated because we must perform the opposite transformation
                 # between coordinate systems, i.e. from swath-based to NS-EW.
-                theta = - gt.get_bearing(bottom_right, upper_right)
+                theta = - gt.get_bearing(corner_sw, corner_nw)
                 logger.info(f'Swath bearing is {-theta}.')
 
                 # Evaluate the projection of image rows/cols along North/East.

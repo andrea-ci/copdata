@@ -33,12 +33,15 @@ def create_image_rgb(image_vv, image_vh):
     n_rows, n_cols = image_vv.shape
     image_rgb = np.zeros((n_rows, n_cols, 3), np.uint8)
 
+    image_vv = image_vv.astype(np.float64)
+    image_vh = image_vh.astype(np.float64)
+
     blue = np.divide(image_vv, image_vh, out = np.zeros_like(image_vv),
         where = image_vh != 0)
 
     # Compose the RGB image.
-    image_rgb[:, :, 0] = image_vv
-    image_rgb[:, :, 1] = image_vh
-    image_rgb[:, :, 2] = blue
+    image_rgb[:, :, 0] = image_vv.astype(np.uint8)
+    image_rgb[:, :, 1] = image_vh.astype(np.uint8)
+    image_rgb[:, :, 2] = blue.astype(np.uint8)
 
     return image_rgb

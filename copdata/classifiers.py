@@ -5,9 +5,9 @@ from scipy.stats import norm as rv
 
 def map_classification(img, err_tol = 0.01, n_classes = 3, scale = 5,
     max_iters = 10):
+    """Coarse MAP classification of pixels."""
 
-    n_rows, n_cols = img.shape
-
+    n_rows, n_cols = img.shape[:2]
     mask = np.empty((n_rows, n_cols), dtype = 'uint8')
 
     img_min = np.min(img)
