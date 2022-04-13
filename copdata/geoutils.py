@@ -3,10 +3,6 @@ import numpy as np
 from numba import jit
 from turfpy import measurement
 from geojson import Point, Feature, FeatureCollection, Polygon
-from . import utils
-
-# Init the logger.
-logger = utils.get_logger()
 
 EARTH_RADIUS = 6371000
 PIXEL_SPACING = 10
@@ -25,15 +21,11 @@ def get_img_coords(img_poly, n_rows, n_cols):
     theta1 = get_bearing(corner_sw, corner_nw)
     theta2 = get_bearing(corner_se, corner_ne)
     theta = np.mean([theta1, theta2])
-    logger.info(f'Swath bearing is {theta}.')
 
     # Angle is negated because we must perform the opposite transformation
     # between coordinate systems, i.e. from swath-based to NS-EW.
     dE_col, dN_col = rotate_spacing(PIXEL_SPACING, 0, -theta)
     dE_row, dN_row = rotate_spacing(0, -PIXEL_SPACING, -theta)
-
-    logger.info(f'Projection of image columns to East and North: {dE_col}m, {dN_col}m')
-    logger.info(f'Projection of image rows to East and North: {dE_row}m, {dN_row}m')
 
     img_coords = np.empty((n_rows, n_cols, 2))
     img_coords[0, 0] = corner_ne

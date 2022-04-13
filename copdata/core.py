@@ -4,10 +4,6 @@ import numpy as np
 import pandas as pd
 import cv2 as cv
 from . import geoutils as gt
-from . import utils
-
-# Init the logger.
-logger = utils.get_logger()
 
 class SentinelProduct:
     """Loads and processes Sentinel products.
@@ -28,9 +24,9 @@ class SentinelProduct:
         res = {}
 
         mission = self.metadata['mission']
+        direction = self.metadata['passDirection']
 
         path_images = self._get_path_images()
-
         if mission == 'sentinel-1':
 
             path_image_vv = path_images['vv']
@@ -39,6 +35,16 @@ class SentinelProduct:
             # Load Sentinel-1 images.
             image_vv = cv.imread(path_image_vv, cv.IMREAD_UNCHANGED)
             image_vh = cv.imread(path_image_vh, cv.IMREAD_UNCHANGED)
+
+            # Adjust the image according to the pass direction.
+            if direction == 'descending':
+                # Flip along East-West axis.
+                image_vv = image_vv[:, ::-1]
+                image_vh = image_vh[:, ::-1]
+            else:
+                # Flip along North-South axis.
+                image_vv = image_vv[::-1, :]
+                image_vh = image_vh[::-1, :]
 
             res['vv'] = image_vv
             res['vh'] = image_vh
@@ -77,7 +83,6 @@ class SentinelProduct:
     def extract_aoi(self, poly_aoi):
         """Extracts a given AOI from the images."""
 
-        direction = self.metadata['passDirection']
         mission = self.metadata['mission']
 
         path_images = self._get_path_images()
@@ -96,7 +101,7 @@ class SentinelProduct:
         bbox = (long_min, lat_min, long_max, lat_max)
 
         r_min, r_max, c_min, c_max = gt.find_bbox_inds(img_coords, bbox)
-        
+
         # Load images.
         imgs = self.images
 
@@ -105,20 +110,17 @@ class SentinelProduct:
             image_vv = imgs['vv']
             image_vh = imgs['vh']
 
-            # Adjust the image according to the pass direction.
-            if direction == 'descending':
-                # Flip along East-West axis.
-                image_vv = image_vv[:, ::-1]
-                image_vh = image_vh[:, ::-1]
-            else:
-                # Flip along North-South axis.
-                image_vv = image_vv[::-1, :]
-                image_vh = image_vh[::-1, :]
-
             cropped_vv = image_vv[r_min : r_max + 1, c_min : c_max + 1]
             cropped_vh = image_vh[r_min : r_max + 1, c_min : c_max + 1]
 
-        return cropped_vv, cropped_vh
+            cropped_coords = img_coords[r_min : r_max + 1, c_min : c_max + 1]
+
+            res = cropped_vv, cropped_vh, cropped_coords
+
+        elif mission == 'sentinel-2':
+            raise NotImplementedError
+
+        return res
 
     def _get_path_images(self):
 
